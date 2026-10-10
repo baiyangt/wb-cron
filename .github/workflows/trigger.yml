@@ -1,0 +1,36 @@
+name: WB Cron Trigger
+
+on:
+  schedule:
+    - cron: "44 23 * * *"   # 北京 07:00
+    - cron: "11 8 * * *"    # 北京 12:00
+    - cron: "33 14 * * *"   # 北京 23:30
+    - cron: "0 16 1 * *"    # 每月1号保活空提交（防60天休眠）
+  workflow_dispatch:
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake up private WorkBuddy-Daily
+        run: |
+          BRANCH=$(curl -sf -H "Authorization: Bearer ${{ secrets.WB_PAT }}" \
+            https://api.github.com/repos/baiyangt/WorkBuddy-Daily | jq -r .default_branch)
+          echo "默认分支: $BRANCH"
+          CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.WB_PAT }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/baiyangt/WorkBuddy-Daily/actions/workflows/workbuddy.yml/dispatches" \
+            -d "{\"ref\":\"$BRANCH\"}")
+          echo "dispatch HTTP $CODE (204=成功)"
+          test "$CODE" = "204"
+
+      - name: Monthly keepalive
+        if: github.event.schedule == '0 16 1 * *'
+        run: |
+          git clone -q https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} repo
+          cd repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "keepalive"
+          git push -q
